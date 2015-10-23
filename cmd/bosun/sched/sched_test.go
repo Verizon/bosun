@@ -70,7 +70,8 @@ func (n *nopDataAccess) GetTagMetadata(tags opentsdb.TagSet, name string) ([]*da
 func (n *nopDataAccess) DeleteTagMetadata(tags opentsdb.TagSet, name string) error {
 	panic("not implemented")
 }
-func (n *nopDataAccess) Search() database.SearchDataAccess { return n }
+func (n *nopDataAccess) Search() database.SearchDataAccess     { return n }
+func (n *nopDataAccess) Metadata() database.MetadataDataAccess { return n }
 func (n *nopDataAccess) AddMetricForTag(tagK, tagV, metric string, time int64) error {
 	panic("not implemented")
 }

@@ -17,6 +17,12 @@ import (
 
 // Core data access interface for everything sched needs
 type DataAccess interface {
+	Metadata() MetadataDataAccess
+	Search() SearchDataAccess
+	Errors() ErrorDataAccess
+}
+
+type MetadataDataAccess interface {
 	// Insert Metric Metadata. Field must be one of "desc", "rate", or "unit".
 	PutMetricMetadata(metric string, field string, value string) error
 	// Get Metric Metadata for given metric.
@@ -25,8 +31,6 @@ type DataAccess interface {
 	PutTagMetadata(tags opentsdb.TagSet, name string, value string, updated time.Time) error
 	GetTagMetadata(tags opentsdb.TagSet, name string) ([]*TagMetadata, error)
 	DeleteTagMetadata(tags opentsdb.TagSet, name string) error
-
-	Search() SearchDataAccess
 }
 
 type SearchDataAccess interface {
@@ -47,6 +51,11 @@ type SearchDataAccess interface {
 
 	BackupLastInfos(map[string]map[string]*LastInfo) error
 	LoadLastInfos() (map[string]map[string]*LastInfo, error)
+}
+
+type ErrorDataAccess interface {
+	MarkAlertSuccess(name string) error
+	MarkAlertFailure(name string) error
 }
 
 type dataAccess struct {

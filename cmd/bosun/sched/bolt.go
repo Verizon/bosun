@@ -315,19 +315,19 @@ func migrateMetricMetadata(db *bolt.DB, data database.DataAccess) error {
 		if err := decode(db, "metadata-metric", &mms); err == nil {
 			for name, mm := range mms {
 				if mm.Description != "" {
-					err = data.PutMetricMetadata(name, "desc", mm.Description)
+					err = data.Metadata().PutMetricMetadata(name, "desc", mm.Description)
 					if err != nil {
 						return err
 					}
 				}
 				if mm.Unit != "" {
-					err = data.PutMetricMetadata(name, "unit", mm.Unit)
+					err = data.Metadata().PutMetricMetadata(name, "unit", mm.Unit)
 					if err != nil {
 						return err
 					}
 				}
 				if mm.Type != "" {
-					err = data.PutMetricMetadata(name, "rate", mm.Type)
+					err = data.Metadata().PutMetricMetadata(name, "rate", mm.Type)
 					if err != nil {
 						return err
 					}
@@ -356,7 +356,7 @@ func migrateTagMetadata(db *bolt.DB, data database.DataAccess) error {
 		metadata := make(map[metadata.Metakey]*Metavalue)
 		if err := decode(db, "metadata", &metadata); err == nil {
 			for k, v := range metadata {
-				err = data.PutTagMetadata(k.TagSet(), k.Name, fmt.Sprint(v.Value), v.Time)
+				err = data.Metadata().PutTagMetadata(k.TagSet(), k.Name, fmt.Sprint(v.Value), v.Time)
 				if err != nil {
 					return err
 				}
