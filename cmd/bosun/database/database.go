@@ -53,11 +53,6 @@ type SearchDataAccess interface {
 	LoadLastInfos() (map[string]map[string]*LastInfo, error)
 }
 
-type ErrorDataAccess interface {
-	MarkAlertSuccess(name string) error
-	MarkAlertFailure(name string) error
-}
-
 type dataAccess struct {
 	pool    *redis.Pool
 	isRedis bool

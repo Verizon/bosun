@@ -60,7 +60,6 @@ func (s *Schedule) save() {
 		dbSilence:       s.Silence,
 		dbStatus:        s.status,
 		dbIncidents:     s.Incidents,
-		dbErrors:        s.AlertStatuses,
 	}
 	tostore := make(map[string][]byte)
 	for name, data := range store {
@@ -151,9 +150,6 @@ func (s *Schedule) RestoreState() error {
 	}
 	if err := decode(db, dbIncidents, &s.Incidents); err != nil {
 		slog.Errorln(dbIncidents, err)
-	}
-	if err := decode(db, dbErrors, &s.AlertStatuses); err != nil {
-		slog.Errorln(dbErrors, err)
 	}
 
 	// Calculate next incident id.
