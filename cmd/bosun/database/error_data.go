@@ -7,6 +7,7 @@ import (
 	"bosun.org/opentsdb"
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 /*
@@ -20,15 +21,11 @@ error:{name} = list of json objects for coalesced error events (most recent firs
 
 type ErrorDataAccess interface {
 	MarkAlertSuccess(name string) error
-	MarkAlertFailure(name string) error
+	MarkAlertFailure(name string, msg string) error
 	GetFailingAlertCounts() (int, int, error)
 
 	GetFailingAlerts() (map[string]bool, error)
 	IsAlertFailing(name string) (bool, error)
-
-	GetLastEvent(name string) (*models.AlertError, error)
-	UpdateLastEvent(name string, event *models.AlertError) error
-	AddEvent(name string, event *models.AlertError) error
 
 	GetFullErrorHistory() (map[string][]*models.AlertError, error)
 	ClearAlert(name string) error
@@ -53,14 +50,55 @@ func (d *dataAccess) MarkAlertSuccess(name string) error {
 	return err
 }
 
-func (d *dataAccess) MarkAlertFailure(name string) error {
+func (d *dataAccess) MarkAlertFailure(name string, msg string) error {
 	defer collect.StartTimer("redis", opentsdb.TagSet{"op": "MarkAlertFailure"})()
 	conn := d.GetConnection()
 	defer conn.Close()
+
+	failing, err := d.IsAlertFailing(name)
+	if err != nil {
+		return err
+	}
+
 	if _, err := conn.Do("SADD", alertsWithErrors, name); err != nil {
 		return err
 	}
-	_, err := conn.Do("SADD", failingAlerts, name)
+	if _, err := conn.Do("SADD", failingAlerts, name); err != nil {
+		return err
+	}
+	var event *models.AlertError
+	if failing {
+		event, err = d.getLastErrorEvent(name)
+		if err != nil {
+			return err
+		}
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	if event == nil || event.Message != msg {
+		event = &models.AlertError{
+			FirstTime: now,
+			LastTime:  now,
+			Count:     1,
+			Message:   msg,
+		}
+	} else {
+		event.Count++
+		event.LastTime = now
+		// pop prior record
+		_, err = conn.Do("LPOP", errorListKey(name))
+		if err != nil {
+			return err
+		}
+	}
+	marshalled, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	_, err = conn.Do("LPUSH", errorListKey(name), marshalled)
+	if err != nil {
+		return err
+	}
+	_, err = conn.Do("LPUSH", errorEvents, name)
 	return err
 }
 
@@ -103,11 +141,8 @@ func (d *dataAccess) IsAlertFailing(name string) (bool, error) {
 func errorListKey(name string) string {
 	return fmt.Sprintf("errors:%s", name)
 }
-func (d *dataAccess) GetLastEvent(name string) (*models.AlertError, error) {
-	defer collect.StartTimer("redis", opentsdb.TagSet{"op": "GetLastEvent"})()
+func (d *dataAccess) getLastErrorEvent(name string) (*models.AlertError, error) {
 	conn := d.GetConnection()
-	defer conn.Close()
-
 	str, err := redis.Bytes(conn.Do("LINDEX", errorListKey(name), "0"))
 	if err != nil {
 		if err == redis.ErrNil {
@@ -120,43 +155,6 @@ func (d *dataAccess) GetLastEvent(name string) (*models.AlertError, error) {
 		return nil, err
 	}
 	return ev, nil
-}
-
-func (d *dataAccess) UpdateLastEvent(name string, event *models.AlertError) error {
-	defer collect.StartTimer("redis", opentsdb.TagSet{"op": "IncrementLastEvent"})()
-	conn := d.GetConnection()
-	defer conn.Close()
-	marshalled, err := json.Marshal(event)
-	if err != nil {
-		return err
-	}
-	_, err = conn.Do("LPOP", errorListKey(name))
-	if err != nil {
-		return err
-	}
-	_, err = conn.Do("LPUSH", errorListKey(name), marshalled)
-	if err != nil {
-		return err
-	}
-	_, err = conn.Do("LPUSH", errorEvents, name)
-	return err
-}
-
-func (d *dataAccess) AddEvent(name string, event *models.AlertError) error {
-	defer collect.StartTimer("redis", opentsdb.TagSet{"op": "AddEvent"})()
-	conn := d.GetConnection()
-	defer conn.Close()
-
-	marshalled, err := json.Marshal(event)
-	if err != nil {
-		return err
-	}
-	_, err = conn.Do("LPUSH", errorListKey(name), marshalled)
-	if err != nil {
-		return err
-	}
-	_, err = conn.Do("LPUSH", errorEvents, name)
-	return err
 }
 
 func (d *dataAccess) GetFullErrorHistory() (map[string][]*models.AlertError, error) {
@@ -201,13 +199,15 @@ func (d *dataAccess) ClearAlert(name string) error {
 	if err != nil {
 		return err
 	}
-	_, err = conn.Do("DEL", errorListKey(name))
+	_, err = conn.Do(d.LCLEAR(), errorListKey(name))
 	if err != nil {
 		return err
 	}
-	_, err = conn.Do("LREM", errorEvents, 0, name)
-	if err != nil {
-		return err
+	if d.isRedis { //TODO. Ledis no support LREM. Switch to counters.
+		_, err = conn.Do("LREM", errorEvents, 0, name)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -222,17 +222,17 @@ func (d *dataAccess) ClearAll() error {
 		return err
 	}
 	for _, a := range alerts {
-		if _, err := conn.Do("DEL", errorListKey(a)); err != nil {
+		if _, err := conn.Do(d.LCLEAR(), errorListKey(a)); err != nil {
 			return err
 		}
 	}
-	if _, err := conn.Do("DEL", alertsWithErrors); err != nil {
+	if _, err := conn.Do(d.SCLEAR(), alertsWithErrors); err != nil {
 		return err
 	}
-	if _, err := conn.Do("DEL", failingAlerts); err != nil {
+	if _, err := conn.Do(d.SCLEAR(), failingAlerts); err != nil {
 		return err
 	}
-	if _, err = conn.Do("DEL", errorEvents); err != nil {
+	if _, err = conn.Do(d.LCLEAR(), errorEvents); err != nil {
 		return err
 	}
 

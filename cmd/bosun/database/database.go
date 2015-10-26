@@ -126,3 +126,19 @@ func newPool(server, password string, database int, isRedis bool, maxActive int,
 func init() {
 	collect.AggregateMeta("bosun.redis", metadata.MilliSecond, "time in milliseconds per redis call.")
 }
+
+// Ledis can't do DEL in a blanket way like redis can. It has a unique command per type.
+// These helpers allow easy switching.
+func (d *dataAccess) LCLEAR() string {
+	if d.isRedis {
+		return "DEL"
+	}
+	return "LCLEAR"
+}
+
+func (d *dataAccess) SCLEAR() string {
+	if d.isRedis {
+		return "DEL"
+	}
+	return "SCLEAR"
+}

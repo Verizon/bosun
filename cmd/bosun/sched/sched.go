@@ -21,7 +21,6 @@ import (
 	"bosun.org/cmd/bosun/search"
 	"bosun.org/collect"
 	"bosun.org/metadata"
-	"bosun.org/models"
 	"bosun.org/opentsdb"
 	"bosun.org/slog"
 )
@@ -1143,45 +1142,11 @@ func (s *Schedule) AlertSuccessful(name string) bool {
 
 func (s *Schedule) markAlertError(name string, e error) {
 	d := s.DataAccess.Errors()
-	if err := d.MarkAlertFailure(name); err != nil {
+	if err := d.MarkAlertFailure(name, e.Error()); err != nil {
 		slog.Error(err)
 		return
 	}
-	failing, err := d.IsAlertFailing(name)
-	if err != nil {
-		slog.Error(err)
-		return
-	}
-	var event *models.AlertError
-	if failing {
-		event, err = d.GetLastEvent(name)
-		if err != nil {
-			slog.Error(err)
-			return
-		}
-	}
-	now := time.Now().UTC().Truncate(time.Second)
-	if event == nil || event.Message != e.Error() {
-		event := &models.AlertError{
-			FirstTime: now,
-			LastTime:  now,
-			Count:     1,
-			Message:   e.Error(),
-		}
-		err = d.AddEvent(name, event)
-		if err != nil {
-			slog.Error(err)
-			return
-		}
-	} else {
-		event.Count++
-		event.LastTime = now
-		err = d.UpdateLastEvent(name, event)
-		if err != nil {
-			slog.Error(err)
-			return
-		}
-	}
+
 }
 
 func (s *Schedule) markAlertSuccessful(name string) {
@@ -1205,23 +1170,3 @@ func (s *Schedule) getErrorCounts() (failing, total int) {
 	}
 	return
 }
-
-//func (s *Schedule) GetErrorHistory() map[string]*AlertStatus {
-//	mapCopy := make(map[string]*AlertStatus, len(s.AlertStatuses))
-//	//	for name, as := range s.AlertStatuses {
-//	//		asCopy := &AlertStatus{
-//	//			Success: as.Success,
-//	//			Errors:  make([]*AlertError, len(as.Errors)),
-//	//		}
-//	//		for i, err := range as.Errors {
-//	//			asCopy.Errors[i] = &AlertError{
-//	//				Count:     err.Count,
-//	//				FirstTime: err.FirstTime.UTC(),
-//	//				LastTime:  err.LastTime.UTC(),
-//	//				Message:   err.Message,
-//	//			}
-//	//		}
-//	//		mapCopy[name] = asCopy
-//	//	}
-//	return mapCopy
-//}
